@@ -23,21 +23,24 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 * Alert channels (email, Slack, Telegram, ...) are set up once in the healthchecks.io project. Every check is attached to all of them (`healthchecks_channels: "*"`).
 * With Alloy enabled, Grafana Cloud also gets the full journal (`{unit="scraper@<job>.service"}`) and host metrics.
 
-**Step-by-step guide, including deploying from GitHub Actions: [docs/RUNNING.md](docs/RUNNING.md).**
+## Docs
 
-## First-time setup
+* **[docs/RUNNING.md](docs/RUNNING.md)**: step by step, from an empty VM to scheduled jobs, plus deploying from GitHub Actions.
+* **[docs/ANSIBLE.md](docs/ANSIBLE.md)**: how the Ansible is organised, where settings live, how to add a job.
 
-1. Get a VM (Ubuntu 24.04) with SSH allowed from your network/VPN, and an SMB share for the data.
-2. On your laptop:
-   ```bash
-   make deps
-   cp inventories/production/group_vars/research_vm/vault.yml.example inventories/production/group_vars/research_vm/vault.yml
-   $EDITOR inventories/production/group_vars/research_vm/vault.yml   # share creds, healthchecks API key
-   ansible-vault encrypt inventories/production/group_vars/research_vm/vault.yml
-   echo 'your-vault-password' > .vault-pass && chmod 600 .vault-pass   # git-ignored
-   ```
-3. Edit `inventories/production/hosts.yml` (host, username) and `group_vars/research_vm/main.yml` (protected account and agent, share path, jobs).
-4. `make diff EXTRA=-K` to preview, then `make deploy EXTRA=-K`.
+## To do before go-live
+
+- [ ] Request the VM: Ubuntu 24.04, ideally 2 vCPU / 4 GB RAM / 20 GB+ disk. SSH must be allowed from your network, with sudo for your user.
+- [ ] Get the SMB share: path, username, password (and domain, if needed).
+- [ ] Create a [healthchecks.io](https://healthchecks.io) project: read-write API key, plus alert channels (email/Slack).
+- [ ] Optional: a Grafana Cloud free stack for logs and metrics (`monitoring_alloy_*`).
+- [ ] Fill in `inventories/production/hosts.yml` and `group_vars/research_vm/main.yml`. In particular, set the provider's
+      admin account and security-agent service **as they exist on the VM**: `nessusagent.service` is only an example.
+- [ ] Put the app lists to study in `files/apps/` (format: `files/apps/example.json`) and define `scraper_jobs`.
+- [ ] Create and encrypt `vault.yml`. Store the vault password in a password manager.
+- [ ] First deploy from a laptop (`make diff EXTRA=-K`, `make deploy EXTRA=-K`), then `make run JOB=...` and check healthchecks.io goes green.
+- [ ] Optional: GitHub Actions deploys (RUNNING.md, step 3).
+- [ ] Once SSH keys work for everyone: `base_ssh_disable_password_auth: true`.
 
 ## Day-to-day
 
