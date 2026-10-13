@@ -75,6 +75,7 @@
     mode: "0700"
 
 - name: Write job environment files
+  diff: false  # contains the ping URL
   ansible.builtin.template:
     src: job.env.j2
     dest: "/etc/vm-infra/scraper/{{ item.name }}.env"

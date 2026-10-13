@@ -1,0 +1,96 @@
+---
+# Runs on the self-hosted runner on the VM (roles/gha_runner). See docs/RUNNING.md.
+name: Deploy
+"on":
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [status, diff, deploy, run, logs]
+        default: status
+      job:
+        description: Scraper job name (for run / logs)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-infra-deploy
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ANSIBLE_FORCE_COLOR: "1"
+  RUNNER_VENV: /opt/gha-runner/venv/bin
+
+jobs:
+  plan:
+    # Never run fork code on the VM.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, research-vm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          echo "$RUNNER_VENV" >> "$GITHUB_PATH"
+          (umask 077 && printf '%s' "$VAULT_PASSWORD" > .vault-pass)
+      - run: ansible-galaxy collection install -r requirements.yml
+      - name: make diff
+        run: |
+          set +e
+          make diff EXTRA="-e ansible_connection=local --limit $RUNNER_NAME" 2>&1 | tee plan.log
+          status=${PIPESTATUS[0]}
+          { echo '## make diff'; echo '```'; sed 's/\x1b\[[0-9;]*m//g' plan.log | tail -c 60000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - if: always()
+        run: rm -f .vault-pass
+
+  deploy:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
+    runs-on: [self-hosted, research-vm]
+    environment: production  # add yourself as required reviewer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          echo "$RUNNER_VENV" >> "$GITHUB_PATH"
+          (umask 077 && printf '%s' "$VAULT_PASSWORD" > .vault-pass)
+      - run: ansible-galaxy collection install -r requirements.yml
+      - run: make deploy EXTRA="-e ansible_connection=local --limit $RUNNER_NAME"
+      - if: always()
+        run: rm -f .vault-pass
+
+  ops:
+    if: github.event_name == 'workflow_dispatch' && inputs.action != 'deploy'
+    runs-on: [self-hosted, research-vm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          echo "$RUNNER_VENV" >> "$GITHUB_PATH"
+          (umask 077 && printf '%s' "$VAULT_PASSWORD" > .vault-pass)
+      - run: ansible-galaxy collection install -r requirements.yml
+      - name: make ${{ inputs.action }}
+        env:
+          ACTION: ${{ inputs.action }}
+          JOB: ${{ inputs.job }}
+        run: |
+          [[ -z "$JOB" || "$JOB" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "invalid job name"; exit 1; }
+          make "$ACTION" JOB="$JOB" EXTRA="-e ansible_connection=local --limit $RUNNER_NAME"
+      - if: always()
+        run: rm -f .vault-pass

@@ -1,0 +1,21 @@
+---
+# Self-hosted GitHub Actions runner on the VM, so .github/workflows/deploy.yml can apply this repo locally.
+# See docs/RUNNING.md. Anyone who can run workflows on the repo gets root on the VM: keep the repo private.
+gha_runner_enabled: false
+gha_runner_repo_url: ""  # https://github.com/<owner>/<repo>
+gha_runner_labels: [research-vm]
+# One-time registration token (Settings > Actions > Runners > New self-hosted runner), passed with
+# -e gha_runner_token=... on the bootstrap run. Ignored once the runner is registered.
+gha_runner_token: ""
+gha_runner_user: gha-runner
+gha_runner_home: /opt/gha-runner
+gha_runner_dir: "{{ gha_runner_home }}/runner"
+gha_runner_ansible_venv: "{{ gha_runner_home }}/venv"
+gha_runner_ansible_core_version: ">=2.17,<2.20"
+# Initial install only; the runner keeps itself up to date afterwards.
+gha_runner_version: "2.338.0"
+gha_runner_base_url: https://github.com/actions/runner/releases/download
+gha_runner_checksums:
+  x64: sha256:af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
+  arm64: sha256:628b4a7258487b80c1d3c221095a7ded349f5ae0175fd3dfab708d07428f041b
+gha_runner_arch: "{{ 'arm64' if ansible_facts.architecture == 'aarch64' else 'x64' }}"

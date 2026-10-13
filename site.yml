@@ -17,3 +17,6 @@
       tags: [scraper]
     - role: monitoring
       tags: [monitoring]
+    - role: gha_runner
+      tags: [gha_runner]
+      when: gha_runner_enabled | bool

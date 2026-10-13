@@ -43,3 +43,7 @@ scraper_jobs:
     store: google
     args: [--details, --similar, --reviews]
     schedule: "Wed *-*-* 02:00:00"
+
+# ---- Deploy from GitHub Actions via a runner on the VM (docs/RUNNING.md). Repo must stay private.
+gha_runner_enabled: false
+gha_runner_repo_url: https://github.com/peterampazzo/vm-infra

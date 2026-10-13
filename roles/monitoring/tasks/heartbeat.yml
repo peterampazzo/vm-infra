@@ -23,6 +23,7 @@
   when: monitoring_heartbeat_ping_url | length == 0 and healthchecks_api_key | length > 0
 
 - name: Write heartbeat environment
+  diff: false  # contains the ping URL
   ansible.builtin.copy:
     dest: /etc/vm-infra/heartbeat.env
     content: |

@@ -22,6 +22,8 @@ provisioner:
         # Stand-ins for what a VM provider supplies: an admin account, a security agent, a firewall.
         guardrails_protected_users: [itadmin]
         guardrails_protected_services: [nessusagent.service]
+        gha_runner_enabled: true  # installed but not registered (no token)
+        gha_runner_repo_url: https://github.com/peterampazzo/vm-infra
         guardrails_firewall_services: [ufw.service]
         base_ssh_allow_users: [scraperadmin]
         storage_smb_enabled: false
@@ -52,5 +54,6 @@ scenario:
     - prepare
     - converge
     - idempotence
+    - check  # `make diff` on a converged VM must work: it runs on every PR
     - verify
     - destroy

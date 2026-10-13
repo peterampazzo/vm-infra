@@ -13,6 +13,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 | `storage` | Mounts the SMB share at `/mnt/data` (systemd automount, credentials file 0600). |
 | `docker` | Docker CE with `iptables: false` and no bridge network. Containers use host networking, so the provider's firewall is left untouched. Logs go to journald. |
 | `scraper` | Builds the scraper image from a **pinned git commit**. Each job in `scraper_jobs` gets a systemd timer that runs `docker run --rm` and writes to the share. App lists in `files/apps/` are synced to the share. Jobs removed from config are removed from the VM. |
+| `gha_runner` | Optional (`gha_runner_enabled`): a self-hosted GitHub Actions runner on the VM, so PRs get a dry-run diff and merges to `main` deploy (`.github/workflows/deploy.yml`). |
 | `monitoring` | Uses the healthchecks.io API to create checks: one per job, plus a 5-minute host heartbeat (disk, share writable, Docker, failed units). Optionally installs Grafana Alloy to ship logs and metrics to Grafana Cloud. |
 
 ### Alerts
@@ -21,6 +22,8 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 * **VM down, disk full, share mount broken (e.g. password changed), Docker down**: the heartbeat check fails or goes silent.
 * Alert channels (email, Slack, Telegram, ...) are set up once in the healthchecks.io project. Every check is attached to all of them (`healthchecks_channels: "*"`).
 * With Alloy enabled, Grafana Cloud also gets the full journal (`{unit="scraper@<job>.service"}`) and host metrics.
+
+**Step-by-step guide, including deploying from GitHub Actions: [docs/RUNNING.md](docs/RUNNING.md).**
 
 ## First-time setup
 
@@ -49,11 +52,6 @@ make logs JOB=example-apple
 * **Add or change a job**: edit `scraper_jobs` and/or `files/apps/*.json`, then `make deploy`.
 * **Upgrade the scraper**: set `scraper_git_ref` to the new commit SHA, then `make deploy`. The image is rebuilt and old images are removed.
 * **Restore or replace the VM**: get a new VM, update `ansible_host`, then `make deploy`. The data is on the share and nothing else needs restoring.
-
-## Data protection
-
-Store reviews include reviewer names, which are personal data under GDPR. Check with your institution's IT and
-ethics/data-protection teams that the VM and the share are approved for this, or pseudonymise before storing.
 
 ## Testing
 
