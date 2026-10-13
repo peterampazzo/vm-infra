@@ -14,9 +14,42 @@ There are two ways to apply this repo to the VM. Both run the same `site.yml`:
 * An SMB share for the data: path, username and password.
 * A [healthchecks.io](https://healthchecks.io) project. Copy its API key (Settings > API Access > read-write key) and add
   your alert channels (email, Slack, ...).
-* On your laptop: Python 3.11+, `make`, and an SSH key.
+* On your laptop: `git`, Python 3.11+, `make`, and an SSH key. `make deps` installs Ansible.
+* On the VM: **nothing to install.** Ansible is agentless. It logs in over SSH and installs everything (Docker, SMB client,
+  scraper, timers, monitoring). The VM only needs SSH access, `sudo` and Python 3, and stock Ubuntu ships all three. No git on the VM.
 
-## 1. Configure (once)
+## 1. Look at the VM (once, about 5 minutes, read-only)
+
+The only time you log in by hand. Don't install or change anything; just collect the values the config needs.
+
+```bash
+ssh <you>@<vm>
+
+sudo -v && echo "sudo OK"          # if it asks for a password, add EXTRA=-K to make commands later
+lsb_release -ds; python3 --version  # Ubuntu 22.04/24.04, Python 3.8+
+
+# Provider's admin account (keep it!)  -> guardrails_protected_users
+getent passwd | awk -F: '$3>=1000 && $3<65000 {print $1}'
+# Security agent(s) the provider runs  -> guardrails_protected_services
+systemctl list-units --type=service --state=running --no-pager | grep -iE 'nessus|tenable|qualys|falcon|crowdstrike|sentinel|defender|wazuh'
+# Existing SSH allow-list (we only append to it)
+sudo grep -ri '^AllowUsers' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ 2>/dev/null
+# Firewall must be active (one of these)
+sudo ufw status; sudo firewall-cmd --state; systemctl is-active nftables
+
+# Disk: if /var is a separate partition under ~5 GB, set docker_data_root to a path on a bigger one
+df -h / /var
+# Outbound access the setup needs
+curl -sSI https://github.com -o /dev/null && echo "github OK"
+curl -sSI https://hc-ping.com -o /dev/null && echo "healthchecks OK"
+timeout 3 bash -c '</dev/tcp/<smb-server>/445' && echo "SMB OK"   # <smb-server> = host part of your share path
+
+exit
+```
+
+If any check fails (no sudo, no outbound HTTPS, SMB unreachable), ask the VM provider before going further.
+
+## 2. Configure (once, on your laptop)
 
 ```bash
 git clone git@github.com:peterampazzo/vm-infra.git && cd vm-infra
@@ -42,7 +75,7 @@ Then edit these two files:
 
 Commit and push. `vault.yml` is encrypted, and the pre-commit hook refuses to commit it unencrypted.
 
-## 2. First run (from your laptop)
+## 3. First run (from your laptop)
 
 ```bash
 ssh <user>@<vm> true                 # check SSH works
@@ -55,7 +88,7 @@ make logs JOB=example-apple
 
 After this you should have green checks in healthchecks.io: one heartbeat and one check per job, which turns green after the job's first run.
 
-## 3. Deploy from GitHub Actions (optional, once)
+## 4. Deploy from GitHub Actions (optional, once)
 
 This puts a GitHub Actions runner on the VM. It only makes outbound HTTPS connections, so no inbound access is needed.
 
@@ -84,7 +117,7 @@ From then on:
 | Merge to `main` | `Deploy / deploy` waits for your approval, then runs `make deploy`. |
 | **Actions > Deploy > Run workflow** | Choose `status`, `diff`, `deploy`, `run` or `logs` (plus a job name). No terminal needed. |
 
-The laptop commands from step 2 keep working.
+The laptop commands from step 3 keep working.
 
 ## Common changes
 
@@ -98,7 +131,7 @@ The laptop commands from step 2 keep working.
 ## Rebuilding the VM
 
 1. Get a new VM and update `ansible_host` in `inventories/production/hosts.yml`.
-2. Run step 2 from your laptop. If you use Actions, also run step 3.5 with a new token, and remove the old runner under
+2. Run step 3 from your laptop. If you use Actions, also run step 4.5 with a new token, and remove the old runner under
    Settings > Actions > Runners.
 
 Data lives on the share, so there's nothing to restore.

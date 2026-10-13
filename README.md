@@ -31,6 +31,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 ## To do before go-live
 
 - [ ] Request the VM: Ubuntu 24.04, ideally 2 vCPU / 4 GB RAM / 20 GB+ disk. SSH must be allowed from your network, with sudo for your user.
+- [ ] SSH in once and run the read-only checks in RUNNING.md step 1 (nothing to install on the VM).
 - [ ] Get the SMB share: path, username, password (and domain, if needed).
 - [ ] Create a [healthchecks.io](https://healthchecks.io) project: read-write API key, plus alert channels (email/Slack).
 - [ ] Optional: a Grafana Cloud free stack for logs and metrics (`monitoring_alloy_*`).
@@ -39,7 +40,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 - [ ] Put the app lists to study in `files/apps/` (format: `files/apps/example.json`) and define `scraper_jobs`.
 - [ ] Create and encrypt `vault.yml`. Store the vault password in a password manager.
 - [ ] First deploy from a laptop (`make diff EXTRA=-K`, `make deploy EXTRA=-K`), then `make run JOB=...` and check healthchecks.io goes green.
-- [ ] Optional: GitHub Actions deploys (RUNNING.md, step 3).
+- [ ] Optional: GitHub Actions deploys (RUNNING.md, step 4).
 - [ ] Once SSH keys work for everyone: `base_ssh_disable_password_auth: true`.
 
 ## Day-to-day
