@@ -73,6 +73,8 @@ This puts a GitHub Actions runner on the VM. It only makes outbound HTTPS connec
    make deploy EXTRA="-K -e gha_runner_token=XXXX"
    ```
    The runner should now show as *Idle* under Settings > Actions > Runners, with the label `research-vm`.
+6. Under **Settings > Secrets and variables > Actions > Variables**, create the repository variable `VM_RUNNER` = `true`.
+   Until it's set, the Deploy workflow skips every job instead of waiting for a runner that doesn't exist.
 
 From then on:
 

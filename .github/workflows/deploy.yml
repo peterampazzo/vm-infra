@@ -1,5 +1,6 @@
 ---
 # Runs on the self-hosted runner on the VM (roles/gha_runner). See docs/RUNNING.md.
+# Every job is skipped until the repo variable VM_RUNNER is "true", so nothing queues before the runner exists.
 name: Deploy
 "on":
   pull_request:
@@ -35,7 +36,7 @@ env:
 jobs:
   plan:
     # Never run fork code on the VM.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: vars.VM_RUNNER == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, research-vm]
     steps:
       - uses: actions/checkout@v4
@@ -57,7 +58,7 @@ jobs:
         run: rm -f .vault-pass
 
   deploy:
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
+    if: vars.VM_RUNNER == 'true' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy'))
     runs-on: [self-hosted, research-vm]
     environment: production  # add yourself as required reviewer
     steps:
@@ -74,7 +75,7 @@ jobs:
         run: rm -f .vault-pass
 
   ops:
-    if: github.event_name == 'workflow_dispatch' && inputs.action != 'deploy'
+    if: vars.VM_RUNNER == 'true' && github.event_name == 'workflow_dispatch' && inputs.action != 'deploy'
     runs-on: [self-hosted, research-vm]
     steps:
       - uses: actions/checkout@v4
