@@ -1,0 +1,46 @@
+---
+- name: Make the container look like a provider-managed VM image
+  hosts: all
+  become: true
+  tasks:
+    - name: Install SSH server and firewall
+      ansible.builtin.apt:
+        name: [openssh-server, ufw]
+        update_cache: true
+
+    - name: Create provider admin stand-in account
+      ansible.builtin.user:
+        name: itadmin
+
+    - name: Pre-existing AllowUsers line
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        line: AllowUsers itadmin
+
+    - name: Fake security agent unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/nessusagent.service
+        content: |
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+        mode: "0644"
+
+    - name: Start fake security agent
+      ansible.builtin.systemd_service:
+        name: nessusagent
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Enable ufw
+      community.general.ufw:
+        state: enabled
+        policy: allow
+
+    - name: Start ufw unit
+      ansible.builtin.systemd_service:
+        name: ufw.service
+        enabled: true
+        state: started

@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: peterampazzo
+  description: Shared variables and service user
+  license: MIT
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

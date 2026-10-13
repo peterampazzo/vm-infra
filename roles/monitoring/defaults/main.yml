@@ -1,0 +1,22 @@
+---
+# Host heartbeat: a systemd timer pings healthchecks.io every few minutes. A missing ping
+# (VM down, network gone) or a failed self-check (disk, data mount, Docker) raises an alert.
+monitoring_heartbeat_enabled: true
+# Leave empty to create/update the check via the healthchecks API (needs healthchecks_api_key).
+monitoring_heartbeat_ping_url: ""
+monitoring_heartbeat_interval_min: 5
+monitoring_disk_threshold_pct: 85
+monitoring_disk_paths:
+  - /
+  - /var
+  - "{{ docker_data_root | default('/var/lib/docker') }}"
+
+# Grafana Alloy ships journald logs and host metrics to Grafana Cloud (free tier is enough).
+# Alert rules (disk, ERROR log rate, missing data) are then configured in Grafana Cloud.
+monitoring_alloy_enabled: false
+monitoring_alloy_loki_url: ""
+monitoring_alloy_loki_username: ""
+monitoring_alloy_prometheus_url: ""
+monitoring_alloy_prometheus_username: ""
+# Grafana Cloud access policy token with logs:write and metrics:write.
+monitoring_alloy_token: ""

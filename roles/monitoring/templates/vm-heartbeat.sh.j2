@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Self-check: reports success to healthchecks.io, or failure with the list of problems.
+set -uo pipefail
+
+problems=()
+
+for path in {{ monitoring_disk_paths | unique | map('quote') | join(' ') }}; do
+  [[ -d "$path" ]] || continue
+  used=$(df --output=pcent "$path" | tail -1 | tr -dc '0-9')
+  if (( used >= {{ monitoring_disk_threshold_pct }} )); then
+    problems+=("disk ${path} at ${used}%")
+  fi
+done
+
+if ! timeout 30 touch {{ (data_dir ~ '/.heartbeat') | quote }} 2>/dev/null; then
+  problems+=("data dir {{ data_dir }} not writable (share mount down or credentials expired?)")
+fi
+
+if ! systemctl is-active --quiet docker; then
+  problems+=("docker is not running")
+fi
+
+# Scraper job failures are alerted by their own checks.
+failed_units=$(systemctl --failed --plain --no-legend --no-pager | awk '{print $1}' | grep -v '^scraper@' | paste -sd' ')
+if [[ -n "$failed_units" ]]; then
+  problems+=("failed units: ${failed_units}")
+fi
+
+if [[ -f /var/run/reboot-required ]]; then
+  info="reboot pending (unattended-upgrades will handle it)"
+else
+  info="ok"
+fi
+
+{% raw %}if (( ${#problems[@]} )); then{% endraw %}
+  status=fail
+  body=$(printf '%s\n' "${problems[@]}")
+else
+  status=""
+  body="$info"
+fi
+
+echo "$body"
+if [[ -n "${HC_PING_URL:-}" ]]; then
+  curl -fsS -m 10 --retry 3 -o /dev/null --data-binary "$body" "${HC_PING_URL}${status:+/$status}" \
+    || echo "healthcheck ping failed" >&2
+fi
+[[ -z "$status" ]]

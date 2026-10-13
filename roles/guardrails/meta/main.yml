@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: peterampazzo
+  description: Abort if provider-mandated accounts, agents or firewall are missing
+  license: MIT
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Ubuntu
+      versions: [jammy, noble]
+dependencies: []

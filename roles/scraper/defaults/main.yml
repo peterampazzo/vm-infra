@@ -1,0 +1,25 @@
+---
+# Image source:
+#   git      - build on the VM from scraper_git_repo at an exact commit (no registry credentials needed)
+#   registry - pull scraper_image; pin it by digest (…@sha256:…) for reproducibility
+scraper_image_source: git
+scraper_git_repo: https://github.com/peterampazzo/app-reviews-scraper.git
+scraper_git_ref: fce1a897c52426a5615802e5a654fb0c9b9b8930
+scraper_image: "app-reviews-scraper:{{ scraper_git_ref[:12] }}"
+
+# App list JSON files in this directory are copied to <data_dir>/apps/ on every run,
+# so the list of apps being studied is version-controlled here.
+scraper_app_lists_dir: "{{ playbook_dir }}/files/apps"
+
+# One systemd timer per job. Fields:
+#   name      - [a-z0-9-]+, used in unit names (scraper@<name>.service)
+#   list      - app list file name inside files/apps
+#   store     - apple | google
+#   args      - extra scraper flags, e.g. [--details, --reviews, --review-count, "-1"]
+#   schedule  - systemd OnCalendar expression
+#   healthcheck - optional {timeout: seconds, grace: seconds}; alert if no successful run within timeout+grace
+scraper_jobs: []
+scraper_healthcheck_defaults:
+  timeout: 604800  # 7 days
+  grace: 172800  # 2 days
+scraper_randomized_delay: 10min

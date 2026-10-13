@@ -1,0 +1,15 @@
+# {{ ansible_managed }}
+[Unit]
+Description=App reviews scraper job %i
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor={{ data_dir }}
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vm-infra/scraper/%i.env
+ExecStart=/usr/local/bin/scraper-run %i
+ExecStopPost=-/usr/bin/docker rm -f scraper-%i
+TimeoutStopSec=60
+Nice=10

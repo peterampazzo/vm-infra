@@ -1,0 +1,123 @@
+---
+- name: Validate job definitions
+  ansible.builtin.assert:
+    that:
+      - item.name is match('^[a-z0-9-]+$')
+      - item.store in ['apple', 'google']
+      - item.list is match('^[A-Za-z0-9._-]+\.json$')
+      - item.schedule | length > 0
+    fail_msg: "Invalid scraper job {{ item.name | default('?') }}: see scraper_jobs in roles/scraper/defaults/main.yml"
+    quiet: true
+  loop: "{{ scraper_jobs }}"
+  loop_control:
+    label: "{{ item.name | default('?') }}"
+
+- name: Build or pull the scraper image
+  ansible.builtin.include_tasks: "image_{{ scraper_image_source }}.yml"
+
+- name: Create app list directory
+  ansible.builtin.file:
+    path: "{{ data_dir }}/apps"
+    state: directory
+    owner: "{{ omit if storage_smb_enabled | default(false) else service_user }}"
+    group: "{{ omit if storage_smb_enabled | default(false) else service_user }}"
+    mode: "0750"
+
+- name: Sync app lists
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ data_dir }}/apps/"
+    owner: "{{ omit if storage_smb_enabled | default(false) else service_user }}"
+    group: "{{ omit if storage_smb_enabled | default(false) else service_user }}"
+    mode: "0640"
+  with_fileglob: "{{ scraper_app_lists_dir }}/*.json"
+
+- name: Create or update job checks on healthchecks.io
+  ansible.builtin.uri:
+    url: "{{ healthchecks_api_url }}/checks/"
+    method: POST
+    headers:
+      X-Api-Key: "{{ healthchecks_api_key }}"
+    body_format: json
+    body:
+      name: "scraper-{{ item.name }}@{{ inventory_hostname_short }}"
+      tags: "{{ healthchecks_tags }} scraper"
+      desc: "{{ item.store }} {{ item.list }} {{ item.args | default([]) | join(' ') }} ({{ item.schedule }}). Managed by vm-infra."
+      timeout: "{{ (scraper_healthcheck_defaults | combine(item.healthcheck | default({}))).timeout }}"
+      grace: "{{ (scraper_healthcheck_defaults | combine(item.healthcheck | default({}))).grace }}"
+      channels: "{{ healthchecks_channels }}"
+      unique: [name]
+    status_code: [200, 201]
+  loop: "{{ scraper_jobs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: scraper_checks
+  changed_when: scraper_checks.status | default(0) == 201
+  # Upsert is idempotent; run it in --check too so the job env files get the real ping URLs.
+  check_mode: false
+  no_log: true
+  when: healthchecks_api_key | length > 0
+
+- name: Install job runner
+  ansible.builtin.template:
+    src: scraper-run.sh.j2
+    dest: /usr/local/bin/scraper-run
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Create job config directory
+  ansible.builtin.file:
+    path: /etc/vm-infra/scraper
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Write job environment files
+  ansible.builtin.template:
+    src: job.env.j2
+    dest: "/etc/vm-infra/scraper/{{ item.name }}.env"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ scraper_jobs }}"
+  loop_control:
+    index_var: scraper_job_index
+    label: "{{ item.name }}"
+
+- name: Install job service template
+  ansible.builtin.template:
+    src: scraper@.service.j2
+    dest: /etc/systemd/system/scraper@.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install job timers
+  ansible.builtin.template:
+    src: scraper-job.timer.j2
+    dest: "/etc/systemd/system/scraper-job-{{ item.name }}.timer"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ scraper_jobs }}"
+  loop_control:
+    label: "{{ item.name }}"
+  notify: Reload systemd
+
+- name: Reload systemd before enabling timers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable job timers
+  ansible.builtin.systemd_service:
+    name: "scraper-job-{{ item.name }}.timer"
+    enabled: true
+    state: started
+  loop: "{{ scraper_jobs }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Remove jobs no longer in scraper_jobs
+  ansible.builtin.include_tasks: prune_jobs.yml

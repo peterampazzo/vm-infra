@@ -1,0 +1,32 @@
+---
+- name: Find installed job timers
+  ansible.builtin.find:
+    paths: /etc/systemd/system
+    patterns: scraper-job-*.timer
+  register: scraper_installed_timers
+
+- name: Stop and disable removed job timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    state: stopped
+  loop: "{{ scraper_stale_timers }}"
+  vars:
+    scraper_stale_timers: >-
+      {{ scraper_installed_timers.files | map(attribute='path') | map('basename')
+         | difference(scraper_jobs | map(attribute='name') | map('regex_replace', '^(.*)$', 'scraper-job-\1.timer'))
+         | list }}
+
+- name: Delete removed job files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{ scraper_stale_names | map('regex_replace', '^(.*)$', '/etc/systemd/system/scraper-job-\1.timer') | list
+       + scraper_stale_names | map('regex_replace', '^(.*)$', '/etc/vm-infra/scraper/\1.env') | list }}
+  vars:
+    scraper_stale_names: >-
+      {{ scraper_installed_timers.files | map(attribute='path') | map('basename')
+         | map('regex_replace', '^scraper-job-(.*)\.timer$', '\1')
+         | difference(scraper_jobs | map(attribute='name')) | list }}
+  notify: Reload systemd

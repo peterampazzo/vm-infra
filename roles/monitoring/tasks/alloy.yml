@@ -1,0 +1,47 @@
+---
+- name: Validate Alloy settings
+  ansible.builtin.assert:
+    that:
+      - monitoring_alloy_loki_url | length > 0
+      - monitoring_alloy_prometheus_url | length > 0
+      - monitoring_alloy_token | length > 0
+    fail_msg: Set the monitoring_alloy_* Grafana Cloud endpoints and token, or disable monitoring_alloy_enabled.
+    quiet: true
+
+- name: Add Grafana apt repository
+  ansible.builtin.deb822_repository:
+    name: grafana
+    types: [deb]
+    uris: https://apt.grafana.com
+    suites: [stable]
+    components: [main]
+    signed_by: https://apt.grafana.com/gpg.key
+
+- name: Install Alloy
+  ansible.builtin.apt:
+    name: alloy
+    state: present
+    update_cache: true
+
+- name: Allow Alloy to read the journal
+  ansible.builtin.user:
+    name: alloy
+    groups: [systemd-journal, adm]
+    append: true
+  notify: Restart alloy
+
+- name: Configure Alloy
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: root
+    group: alloy
+    mode: "0640"
+    validate: /usr/bin/alloy fmt %s
+  notify: Restart alloy
+
+- name: Enable Alloy
+  ansible.builtin.systemd_service:
+    name: alloy
+    enabled: true
+    state: started

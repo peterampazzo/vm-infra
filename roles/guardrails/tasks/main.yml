@@ -1,0 +1,39 @@
+---
+- name: Check protected accounts exist
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ item }}"
+  loop: "{{ guardrails_protected_users }}"
+  when: guardrails_enabled
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+  when: guardrails_enabled
+
+- name: Assert protected services are present and running
+  ansible.builtin.assert:
+    that:
+      - item in ansible_facts.services
+      - ansible_facts.services[item].state == 'running'
+    fail_msg: "{{ item }} must be installed and running (VM provider requirement)."
+    quiet: true
+  loop: "{{ guardrails_protected_services }}"
+  when: guardrails_enabled
+
+# Firewall units (ufw, nftables, netfilter-persistent) are oneshot + RemainAfterExit,
+# so service_facts reports them as "stopped"; ask systemd for the active state instead.
+- name: Check firewall unit states
+  ansible.builtin.command: systemctl is-active {{ guardrails_firewall_services | join(' ') }}  # noqa: command-instead-of-module
+  register: guardrails_firewall_state
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: guardrails_enabled and guardrails_require_firewall
+
+- name: Assert a firewall is active
+  ansible.builtin.assert:
+    that:
+      - "'active' in guardrails_firewall_state.stdout_lines"
+    fail_msg: "No active firewall found ({{ guardrails_firewall_services | join(', ') }}). The VM provider requires one."
+    quiet: true
+  when: guardrails_enabled and guardrails_require_firewall

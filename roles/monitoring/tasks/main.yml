@@ -1,0 +1,8 @@
+---
+- name: Configure host heartbeat
+  ansible.builtin.include_tasks: heartbeat.yml
+  when: monitoring_heartbeat_enabled
+
+- name: Configure Grafana Alloy
+  ansible.builtin.include_tasks: alloy.yml
+  when: monitoring_alloy_enabled

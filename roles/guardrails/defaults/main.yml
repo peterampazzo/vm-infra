@@ -1,0 +1,14 @@
+---
+# Provider-managed VMs often require that the provider's admin account and security agents
+# are kept, and that a firewall stays active.
+# The play aborts before changing anything if these are not true.
+guardrails_enabled: true
+# Name of the provider's admin account on the VM (check /etc/passwd).
+guardrails_protected_users: []
+guardrails_protected_services: []
+guardrails_require_firewall: true
+guardrails_firewall_services:
+  - ufw.service
+  - firewalld.service
+  - nftables.service
+  - netfilter-persistent.service

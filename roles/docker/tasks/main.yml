@@ -1,0 +1,63 @@
+---
+- name: Remove distro container packages that conflict with Docker CE
+  ansible.builtin.apt:
+    name: [docker.io, docker-doc, docker-compose, podman-docker, containerd, runc]
+    state: absent
+
+- name: Install deb822_repository prerequisites
+  ansible.builtin.apt:
+    name: python3-debian
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add Docker apt repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: https://download.docker.com/linux/ubuntu
+    suites: ["{{ ansible_facts.distribution_release }}"]
+    components: [stable]
+    architectures: ["{{ 'arm64' if ansible_facts.architecture == 'aarch64' else 'amd64' }}"]
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name: "{{ docker_packages }}"
+    state: present
+    update_cache: true
+
+- name: Create Docker config directory
+  ansible.builtin.file:
+    path: /etc/docker
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Configure Docker daemon
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart docker
+
+- name: Enable Docker
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+
+- name: Apply daemon config before using Docker
+  ansible.builtin.meta: flush_handlers
+
+- name: Log in to container registries
+  ansible.builtin.command:
+    cmd: docker login --username {{ item.username | quote }} --password-stdin {{ item.registry | quote }}
+    stdin: "{{ item.password }}"
+  loop: "{{ docker_registry_auth }}"
+  loop_control:
+    label: "{{ item.registry }}"
+  changed_when: false
+  no_log: true

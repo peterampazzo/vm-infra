@@ -1,0 +1,68 @@
+// {{ ansible_managed }}
+logging {
+  level = "warn"
+}
+
+// ---- Logs: systemd journal (includes scraper@*.service job output) -> Grafana Cloud Loki
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "system" {
+  max_age       = "12h"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {host = "{{ inventory_hostname_short }}", job = "systemd-journal"}
+  forward_to    = [loki.write.cloud.receiver]
+}
+
+loki.write "cloud" {
+  endpoint {
+    url = "{{ monitoring_alloy_loki_url }}"
+
+    basic_auth {
+      username = "{{ monitoring_alloy_loki_username }}"
+      password = "{{ monitoring_alloy_token }}"
+    }
+  }
+}
+
+// ---- Metrics: host (CPU, memory, disk incl. the CIFS data mount) -> Grafana Cloud Prometheus
+prometheus.exporter.unix "host" {
+  disable_collectors = ["btrfs", "infiniband", "ipvs", "xfs", "zfs"]
+}
+
+prometheus.scrape "host" {
+  targets         = prometheus.exporter.unix.host.targets
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.host.receiver]
+}
+
+prometheus.relabel "host" {
+  forward_to = [prometheus.remote_write.cloud.receiver]
+
+  rule {
+    target_label = "instance"
+    replacement  = "{{ inventory_hostname_short }}"
+  }
+}
+
+prometheus.remote_write "cloud" {
+  endpoint {
+    url = "{{ monitoring_alloy_prometheus_url }}"
+
+    basic_auth {
+      username = "{{ monitoring_alloy_prometheus_username }}"
+      password = "{{ monitoring_alloy_token }}"
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "project": "example",
+  "apps": [
+    {
+      "android": {"id": "com.duolingo"},
+      "ios": {"id": 570060128, "name": "duolingo"}
+    }
+  ]
+}

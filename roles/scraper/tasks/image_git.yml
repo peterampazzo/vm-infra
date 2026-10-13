@@ -1,0 +1,36 @@
+---
+- name: Install git (needed by docker build for git contexts)
+  ansible.builtin.apt:
+    name: git
+    state: present
+
+- name: Check whether the image is already built
+  ansible.builtin.command:
+    cmd: docker image inspect {{ scraper_image | quote }}
+  register: scraper_image_inspect
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Build image from the pinned git commit
+  ansible.builtin.command:
+    cmd: >-
+      docker build --pull --network host
+      --label org.opencontainers.image.source={{ scraper_git_repo | quote }}
+      --label org.opencontainers.image.revision={{ scraper_git_ref | quote }}
+      -t {{ scraper_image | quote }} {{ (scraper_git_repo ~ '#' ~ scraper_git_ref) | quote }}
+  changed_when: true
+  when: scraper_image_inspect.rc != 0
+
+- name: List older scraper image tags
+  ansible.builtin.command:
+    cmd: docker image ls --format {{ '{{.Repository}}:{{.Tag}}' | quote }} {{ scraper_image.split(':')[0] | quote }}
+  register: scraper_image_tags
+  changed_when: false
+  check_mode: false
+
+- name: Remove older scraper images (small VM disk)
+  ansible.builtin.command:
+    cmd: docker image rm {{ item | quote }}
+  loop: "{{ scraper_image_tags.stdout_lines | reject('equalto', scraper_image) | list }}"
+  changed_when: true

@@ -1,0 +1,56 @@
+---
+driver:
+  name: docker
+platforms:
+  - name: research-vm-ubuntu2404
+    image: geerlingguy/docker-ubuntu2404-ansible:latest
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - /var/lib/docker
+      - /var/lib/containerd
+    groups:
+      - research_vm
+provisioner:
+  name: ansible
+  inventory:
+    group_vars:
+      research_vm:
+        # Stand-ins for what a VM provider supplies: an admin account, a security agent, a firewall.
+        guardrails_protected_users: [itadmin]
+        guardrails_protected_services: [nessusagent.service]
+        guardrails_firewall_services: [ufw.service]
+        base_ssh_allow_users: [scraperadmin]
+        storage_smb_enabled: false
+        healthchecks_api_key: ""
+        monitoring_heartbeat_ping_url: ""
+        scraper_jobs:
+          - name: molecule-google
+            list: example.json
+            store: google
+            args: [--details]
+            schedule: "*-*-* 03:00:00"
+          - name: molecule-apple
+            list: example.json
+            store: apple
+            args: [--details]
+            schedule: "*-*-* 04:00:00"
+  playbooks:
+    prepare: prepare.yml
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - destroy
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - verify
+    - destroy

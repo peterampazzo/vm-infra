@@ -1,0 +1,9 @@
+---
+# cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+# vault.yml must stay encrypted (CI and the pre-commit hook check this).
+vault_smb_username: CHANGEME
+vault_smb_password: CHANGEME
+vault_healthchecks_api_key: CHANGEME
+# vault_grafana_cloud_token: CHANGEME
+# sudo password if the account needs one (otherwise pass -K / EXTRA=-K):
+# ansible_become_password: CHANGEME
