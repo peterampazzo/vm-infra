@@ -13,7 +13,6 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 | `storage` | Mounts the SMB share at `/mnt/data` (systemd automount, credentials file 0600). |
 | `docker` | Docker CE with `iptables: false` and no bridge network. Containers use host networking, so the provider's firewall is left untouched. Logs go to journald. |
 | `scraper` | Builds the scraper image from a **pinned git commit**. Each job in `scraper_jobs` gets a systemd timer that runs `docker run --rm` and writes to the share. App lists in `files/apps/` are synced to the share. Jobs removed from config are removed from the VM. |
-| `gha_runner` | Optional (`gha_runner_enabled`): a self-hosted GitHub Actions runner on the VM, so PRs get a dry-run diff and merges to `main` deploy (`.github/workflows/deploy.yml`). |
 | `monitoring` | Uses the healthchecks.io API to create checks: one per job, plus a 5-minute host heartbeat (disk, share writable, Docker, failed units). Optionally installs Grafana Alloy to ship logs and metrics to Grafana Cloud. |
 
 ### Alerts
@@ -25,7 +24,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 
 ## Docs
 
-* **[docs/RUNNING.md](docs/RUNNING.md)**: step by step, from an empty VM to scheduled jobs, plus deploying from GitHub Actions.
+* **[docs/RUNNING.md](docs/RUNNING.md)**: step by step, from an empty VM to scheduled jobs.
 * **[docs/ANSIBLE.md](docs/ANSIBLE.md)**: how the Ansible is organised, where settings live, how to add a job.
 
 ## To do before go-live
@@ -40,7 +39,6 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 - [ ] Put the app lists to study in `files/apps/` (format: `files/apps/example.json`) and define `scraper_jobs`.
 - [ ] Create and encrypt `vault.yml`. Store the vault password in a password manager.
 - [ ] First deploy from a laptop (`make diff EXTRA=-K`, `make deploy EXTRA=-K`), then `make run JOB=...` and check healthchecks.io goes green.
-- [ ] Optional: GitHub Actions deploys (RUNNING.md, step 4).
 - [ ] Once SSH keys work for everyone: `base_ssh_disable_password_auth: true`.
 
 ## Day-to-day
