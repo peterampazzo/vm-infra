@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Runs one scraper job in Docker and reports start / exit code (+ log tail) to healthchecks.io.
+# Usage: scraper-run <job-name>   (env from /etc/vm-infra/scraper/<job-name>.env via systemd)
+set -uo pipefail
+
+job="$1"
+rid=$(cat /proc/sys/kernel/random/uuid)
+
+hc_ping() {
+  [[ -n "${HC_PING_URL:-}" ]] || return 0
+  curl -fsS -m 10 --retry 5 -o /dev/null --data-binary "${2:-}" "${HC_PING_URL}${1}?rid=${rid}" \
+    || echo "healthcheck ping failed" >&2
+}
+
+hc_ping /start
+
+# HEALTH_CHECK is deliberately not passed: the scraper's own pinger runs in a non-daemon
+# thread that keeps the process alive after the scrape finishes. Pings are sent from here instead.
+# shellcheck disable=SC2086
+docker run --rm \
+  --name "scraper-${job}" \
+  --network host \
+  --log-driver none \
+  --user {{ service_uid }}:{{ service_gid }} \
+  -e HOME=/tmp \
+  -e LOGS_FILE="${job}" \
+  -v {{ data_dir | quote }}:/app/data \
+  "${SCRAPER_IMAGE}" ${SCRAPER_ARGS}
+rc=$?
+
+log_tail=$(journalctl --no-pager -o cat "_SYSTEMD_INVOCATION_ID=${INVOCATION_ID:-none}" 2>/dev/null | tail -c 10000)
+hc_ping "/${rc}" "${log_tail}"
+exit "${rc}"

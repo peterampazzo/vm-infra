@@ -1,0 +1,22 @@
+---
+- name: Configure research VMs
+  hosts: research_vm
+  become: true
+  roles:
+    - role: guardrails
+      tags: [guardrails, always]
+    - role: common
+      tags: [common, always]
+    - role: base
+      tags: [base]
+    - role: storage
+      tags: [storage]
+    - role: docker
+      tags: [docker]
+    - role: scraper
+      tags: [scraper]
+    - role: monitoring
+      tags: [monitoring]
+    - role: gha_runner
+      tags: [gha_runner]
+      when: gha_runner_enabled | bool

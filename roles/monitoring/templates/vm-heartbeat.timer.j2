@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run VM heartbeat every {{ monitoring_heartbeat_interval_min }} minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ monitoring_heartbeat_interval_min }}min
+
+[Install]
+WantedBy=timers.target

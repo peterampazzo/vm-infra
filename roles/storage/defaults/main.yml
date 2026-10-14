@@ -1,0 +1,19 @@
+---
+# Mount an SMB/CIFS research-data share.
+# When disabled, data_dir is a plain local directory (useful for testing only:
+# the VM disk is small and not where research data should live).
+storage_smb_enabled: true
+# e.g. //fileserver.example.org/share/path
+storage_smb_share: ""
+storage_smb_username: ""
+storage_smb_password: ""
+storage_smb_domain: ""
+storage_smb_credentials_file: /etc/vm-infra/smb.credentials
+storage_smb_extra_opts:
+  - vers=3.0
+  - file_mode=0640
+  - dir_mode=0750
+  - _netdev
+  - nofail
+  - x-systemd.automount
+  - x-systemd.mount-timeout=30

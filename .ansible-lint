@@ -1,0 +1,8 @@
+---
+profile: production
+exclude_paths:
+  - .venv/
+  - .github/
+  - inventories/*/group_vars/*/vault.yml
+skip_list:
+  - var-naming[no-role-prefix]  # shared vars (service_user, data_dir, healthchecks_*) live in the common role

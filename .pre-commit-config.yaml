@@ -1,0 +1,21 @@
+---
+default_language_version:
+  python: python3
+repos:
+  - repo: local
+    hooks:
+      - id: vault-encrypted
+        name: vault.yml files are encrypted
+        entry: make check-vault
+        language: system
+        pass_filenames: false
+        always_run: true
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+  - repo: https://github.com/ansible/ansible-lint
+    rev: v25.9.2
+    hooks:
+      - id: ansible-lint
+        language_version: python3

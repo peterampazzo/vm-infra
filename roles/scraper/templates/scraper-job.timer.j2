@@ -1,0 +1,12 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Schedule for scraper job {{ item.name }}
+
+[Timer]
+Unit=scraper@{{ item.name }}.service
+OnCalendar={{ item.schedule }}
+Persistent=true
+RandomizedDelaySec={{ scraper_randomized_delay }}
+
+[Install]
+WantedBy=timers.target

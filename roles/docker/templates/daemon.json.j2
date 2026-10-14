@@ -1,0 +1,9 @@
+{% set cfg = {
+  "data-root": docker_data_root,
+  "log-driver": docker_log_driver,
+  "live-restore": true,
+  "iptables": docker_manage_iptables,
+  "ip6tables": docker_manage_iptables,
+} %}
+{% if not docker_manage_iptables %}{% set _ = cfg.update({"bridge": "none"}) %}{% endif %}
+{{ cfg | to_nice_json }}

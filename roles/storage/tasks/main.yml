@@ -1,0 +1,55 @@
+---
+- name: Validate SMB settings
+  ansible.builtin.assert:
+    that:
+      - storage_smb_share is match('^//')
+      - storage_smb_username | length > 0
+      - storage_smb_password | length > 0
+    fail_msg: Set storage_smb_share, storage_smb_username and storage_smb_password (vault) or disable storage_smb_enabled.
+    quiet: true
+  when: storage_smb_enabled
+
+- name: Mount the SMB share
+  when: storage_smb_enabled
+  block:
+    - name: Install cifs-utils
+      ansible.builtin.apt:
+        name: cifs-utils
+        state: present
+
+    - name: Write SMB credentials
+      ansible.builtin.template:
+        src: smb.credentials.j2
+        dest: "{{ storage_smb_credentials_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Mount share and persist in fstab
+      ansible.posix.mount:
+        src: "{{ storage_smb_share | replace(' ', '\\040') }}"
+        path: "{{ data_mount_point }}"
+        fstype: cifs
+        opts: >-
+          {{ (['credentials=' ~ storage_smb_credentials_file,
+               'uid=' ~ service_uid, 'gid=' ~ service_gid] + storage_smb_extra_opts) | join(',') }}
+        state: mounted
+
+    - name: Create data directory on the share
+      ansible.builtin.file:
+        path: "{{ data_dir }}"
+        state: directory
+        mode: "0750"
+
+- name: Create local data directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ service_user }}"
+    group: "{{ service_user }}"
+    mode: "0750"
+  loop:
+    - "{{ data_mount_point }}"
+    - "{{ data_dir }}"
+  when: not storage_smb_enabled

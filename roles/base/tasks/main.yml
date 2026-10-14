@@ -1,0 +1,100 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Set timezone
+  community.general.timezone:
+    name: "{{ base_timezone }}"
+
+- name: Enable periodic unattended upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure unattended upgrades
+  ansible.builtin.template:
+    src: 52unattended-upgrades-local.j2
+    dest: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Cap journald disk usage
+  ansible.builtin.template:
+    src: journald.conf.j2
+    dest: /etc/systemd/journald.conf.d/50-vm-infra.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+- name: Install SSH public keys
+  ansible.posix.authorized_key:
+    user: "{{ item.user }}"
+    key: "{{ item.key }}"
+    state: present
+  loop: "{{ base_ssh_authorized_keys }}"
+  loop_control:
+    label: "{{ item.user }}"
+
+- name: Read sshd_config
+  ansible.builtin.slurp:
+    src: /etc/ssh/sshd_config
+  register: base_sshd_config
+  when: base_ssh_allow_users | length > 0
+
+# Ubuntu 24.04 socket-activates ssh, so /run/sshd may not exist yet and `sshd -t` (used to validate) fails without it.
+- name: Ensure sshd privilege separation directory exists
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Append users to the existing AllowUsers line
+  vars:
+    base_current_allow_users: >-
+      {{ (base_sshd_config.content | b64decode
+          | regex_search('^AllowUsers[ \t]+(.*)$', '\1', multiline=True)
+          | default([''], true)) | first | split }}
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^AllowUsers\s'
+    line: "AllowUsers {{ (base_current_allow_users + base_ssh_allow_users) | unique | join(' ') }}"
+    validate: /usr/sbin/sshd -t -f %s
+  when:
+    - base_ssh_allow_users | length > 0
+    - base_current_allow_users | length > 0
+  notify: Reload sshd
+
+- name: Disable SSH password authentication
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/10-vm-infra.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  when: base_ssh_disable_password_auth
+  notify: Reload sshd

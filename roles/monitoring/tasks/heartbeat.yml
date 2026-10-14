@@ -1,0 +1,60 @@
+---
+- name: Create or update heartbeat check on healthchecks.io
+  ansible.builtin.uri:
+    url: "{{ healthchecks_api_url }}/checks/"
+    method: POST
+    headers:
+      X-Api-Key: "{{ healthchecks_api_key }}"
+    body_format: json
+    body:
+      name: "heartbeat@{{ inventory_hostname_short }}"
+      tags: "{{ healthchecks_tags }}"
+      desc: "Host self-check from {{ inventory_hostname }} (disk, data mount, Docker). Managed by vm-infra."
+      timeout: "{{ monitoring_heartbeat_interval_min * 60 }}"
+      grace: "{{ monitoring_heartbeat_interval_min * 60 * 2 }}"
+      channels: "{{ healthchecks_channels }}"
+      unique: [name]
+    status_code: [200, 201]
+  register: monitoring_heartbeat_check
+  changed_when: monitoring_heartbeat_check.status == 201
+  # Upsert is idempotent; run it in --check too so templates get the real ping URL.
+  check_mode: false
+  no_log: true
+  when: monitoring_heartbeat_ping_url | length == 0 and healthchecks_api_key | length > 0
+
+- name: Write heartbeat environment
+  diff: false  # contains the ping URL
+  ansible.builtin.copy:
+    dest: /etc/vm-infra/heartbeat.env
+    content: |
+      HC_PING_URL={{ monitoring_heartbeat_ping_url or (monitoring_heartbeat_check.json.ping_url | default('')) }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install heartbeat script
+  ansible.builtin.template:
+    src: vm-heartbeat.sh.j2
+    dest: /usr/local/bin/vm-heartbeat
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install heartbeat units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - vm-heartbeat.service
+    - vm-heartbeat.timer
+
+- name: Enable heartbeat timer
+  ansible.builtin.systemd_service:
+    name: vm-heartbeat.timer
+    enabled: true
+    state: started
+    daemon_reload: true

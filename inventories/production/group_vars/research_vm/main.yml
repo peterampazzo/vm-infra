@@ -1,0 +1,49 @@
+---
+# ---- Guardrails: the play aborts if these are missing.
+guardrails_protected_users: []  # e.g. [<provider's admin account from /etc/passwd>]
+guardrails_protected_services: [nessusagent.service]  # security agent(s) the VM provider requires
+
+# ---- SSH: users appended to the existing AllowUsers line (never replaces it).
+base_ssh_allow_users: []
+base_ssh_authorized_keys: []
+#  - user: CHANGEME
+#    key: "ssh-ed25519 AAAA... you@laptop"
+
+# ---- Data on an SMB/CIFS share (path from your storage provider).
+storage_smb_enabled: true
+storage_smb_share: "//CHANGEME/CHANGEME"
+storage_smb_domain: ""  # AD domain for the share login, if your provider needs one
+storage_smb_username: "{{ vault_smb_username }}"
+storage_smb_password: "{{ vault_smb_password }}"
+data_dir: "{{ data_mount_point }}/app-reviews-scraper"
+
+# ---- Docker: move images off the 1 GB /var if the VM has a bigger volume.
+docker_data_root: /var/lib/docker
+
+# ---- Alerts.
+healthchecks_api_key: "{{ vault_healthchecks_api_key }}"
+
+monitoring_alloy_enabled: false
+monitoring_alloy_loki_url: https://logs-prod-CHANGEME.grafana.net/loki/api/v1/push
+monitoring_alloy_loki_username: "CHANGEME"
+monitoring_alloy_prometheus_url: https://prometheus-prod-CHANGEME.grafana.net/api/prom/push
+monitoring_alloy_prometheus_username: "CHANGEME"
+monitoring_alloy_token: "{{ vault_grafana_cloud_token | default('') }}"
+
+# ---- Scraper.
+scraper_git_ref: fce1a897c52426a5615802e5a654fb0c9b9b8930
+scraper_jobs:
+  - name: example-apple
+    list: example.json
+    store: apple
+    args: [--details, --similar, --reviews]
+    schedule: "Sun *-*-* 02:00:00"
+  - name: example-google
+    list: example.json
+    store: google
+    args: [--details, --similar, --reviews]
+    schedule: "Wed *-*-* 02:00:00"
+
+# ---- Deploy from GitHub Actions via a runner on the VM (docs/RUNNING.md). Repo must stay private.
+gha_runner_enabled: false
+gha_runner_repo_url: https://github.com/peterampazzo/vm-infra

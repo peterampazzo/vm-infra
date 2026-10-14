@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+[Unit]
+Description=VM self-check and heartbeat ping
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vm-infra/heartbeat.env
+ExecStart=/usr/local/bin/vm-heartbeat

@@ -1,0 +1,84 @@
+---
+- name: Verify
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read sshd_config
+      ansible.builtin.slurp:
+        src: /etc/ssh/sshd_config
+      register: verify_sshd
+
+    - name: AllowUsers keeps the provider admin and adds ours
+      ansible.builtin.assert:
+        that: "'AllowUsers itadmin scraperadmin' in (verify_sshd.content | b64decode)"
+
+    - name: Read Docker daemon config
+      ansible.builtin.slurp:
+        src: /etc/docker/daemon.json
+      register: verify_daemon
+
+    - name: Docker leaves the firewall alone
+      ansible.builtin.assert:
+        that:
+          - (verify_daemon.content | b64decode | from_json).iptables == false
+          - (verify_daemon.content | b64decode | from_json).bridge == 'none'
+
+    - name: Read timer state
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      register: verify_timers
+      loop: [scraper-job-molecule-google.timer, scraper-job-molecule-apple.timer, vm-heartbeat.timer]
+
+    - name: Timers are enabled and active
+      ansible.builtin.assert:
+        that:
+          - item.status.UnitFileState == 'enabled'
+          - item.status.ActiveState == 'active'
+      loop: "{{ verify_timers.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Run one job end to end (google details for one app, all languages)
+      ansible.builtin.systemd_service:
+        name: scraper@molecule-google.service
+        state: started
+      changed_when: false
+
+    - name: Read job result
+      ansible.builtin.systemd_service:
+        name: scraper@molecule-google.service
+      register: verify_job
+
+    - name: Job unit finished successfully
+      ansible.builtin.assert:
+        that: verify_job.status.Result == 'success'
+
+    - name: Find scraped files
+      ansible.builtin.find:
+        paths: /mnt/data/app-reviews-scraper/example/play-store/details/com-duolingo
+        patterns: "*.json"
+      register: verify_files
+
+    - name: Scraped files exist and are owned by the service user
+      ansible.builtin.assert:
+        that:
+          - verify_files.matched > 0
+          - verify_files.files[0].uid == 1500
+
+    - name: Heartbeat self-check passes
+      ansible.builtin.command: /usr/local/bin/vm-heartbeat
+      changed_when: false
+
+    - name: Check the runner is unpacked
+      ansible.builtin.stat:
+        path: /opt/gha-runner/runner/config.sh
+      register: verify_runner
+
+    - name: Runner Ansible works
+      ansible.builtin.command: /opt/gha-runner/venv/bin/ansible --version
+      changed_when: false
+
+    - name: Runner is installed (registration needs a real token)
+      ansible.builtin.assert:
+        that: verify_runner.stat.exists

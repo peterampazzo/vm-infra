@@ -1,0 +1,134 @@
+---
+- name: Validate runner settings
+  ansible.builtin.assert:
+    that:
+      - gha_runner_repo_url is match('^https://github\.com/[^/]+/[^/]+$')
+      - gha_runner_arch in gha_runner_checksums
+    fail_msg: Set gha_runner_repo_url to https://github.com/<owner>/<repo>.
+    quiet: true
+
+- name: Install runner prerequisites
+  ansible.builtin.apt:
+    name: [python3-venv, git, make, tar]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Create runner user
+  ansible.builtin.user:
+    name: "{{ gha_runner_user }}"
+    system: true
+    shell: /bin/bash
+    home: "{{ gha_runner_home }}"
+    create_home: true
+
+# Ansible needs unrestricted root to apply site.yml; this is what makes the repo root-equivalent.
+- name: Allow the runner to become root
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-gha-runner
+    content: "{{ gha_runner_user }} ALL=(root) NOPASSWD: ALL\n"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Install Ansible for the runner
+  ansible.builtin.pip:
+    name: "ansible-core{{ gha_runner_ansible_core_version }}"
+    virtualenv: "{{ gha_runner_ansible_venv }}"
+    virtualenv_command: python3 -m venv
+  become: true
+  become_user: "{{ gha_runner_user }}"
+
+- name: Create runner directory
+  ansible.builtin.file:
+    path: "{{ gha_runner_dir }}"
+    state: directory
+    owner: "{{ gha_runner_user }}"
+    group: "{{ gha_runner_user }}"
+    mode: "0755"  # matches the tarball root, which unarchive applies
+
+- name: Check for an existing runner install
+  ansible.builtin.stat:
+    path: "{{ gha_runner_dir }}/config.sh"
+  register: gha_runner_installed
+
+- name: Install the runner
+  when: not gha_runner_installed.stat.exists
+  vars:
+    gha_runner_tarball: "{{ gha_runner_home }}/actions-runner.tar.gz"
+  block:
+    - name: Download the runner
+      ansible.builtin.get_url:
+        url: "{{ gha_runner_base_url }}/v{{ gha_runner_version }}/actions-runner-linux-{{ gha_runner_arch }}-{{ gha_runner_version }}.tar.gz"
+        dest: "{{ gha_runner_tarball }}"
+        checksum: "{{ gha_runner_checksums[gha_runner_arch] }}"
+        mode: "0644"
+
+    - name: Unpack the runner
+      ansible.builtin.unarchive:
+        src: "{{ gha_runner_tarball }}"
+        dest: "{{ gha_runner_dir }}"
+        remote_src: true
+        owner: "{{ gha_runner_user }}"
+        group: "{{ gha_runner_user }}"
+
+    - name: Remove the runner tarball
+      ansible.builtin.file:
+        path: "{{ gha_runner_tarball }}"
+        state: absent
+
+- name: Install runner OS dependencies
+  ansible.builtin.shell: ./bin/installdependencies.sh && touch .deps-installed
+  args:
+    chdir: "{{ gha_runner_dir }}"
+    creates: "{{ gha_runner_dir }}/.deps-installed"
+
+- name: Check runner registration
+  ansible.builtin.stat:
+    path: "{{ gha_runner_dir }}/.runner"
+  register: gha_runner_registered
+
+- name: Register the runner with GitHub
+  ansible.builtin.command:
+    argv:
+      - ./config.sh
+      - --unattended
+      - --replace
+      - --url
+      - "{{ gha_runner_repo_url }}"
+      - --token
+      - "{{ gha_runner_token }}"
+      - --name
+      - "{{ inventory_hostname }}"
+      - --labels
+      - "{{ gha_runner_labels | join(',') }}"
+      - --work
+      - _work
+    chdir: "{{ gha_runner_dir }}"
+    creates: "{{ gha_runner_dir }}/.runner"
+  become: true
+  become_user: "{{ gha_runner_user }}"
+  no_log: true
+  when: not gha_runner_registered.stat.exists and gha_runner_token | length > 0
+
+- name: Warn that the runner is not registered
+  ansible.builtin.debug:
+    msg: Runner installed but not registered. Re-run with -e gha_runner_token=<token> (see docs/RUNNING.md).
+  when: not gha_runner_registered.stat.exists and gha_runner_token | length == 0
+
+- name: Install runner service
+  ansible.builtin.template:
+    src: actions-runner.service.j2
+    dest: /etc/systemd/system/actions-runner.service
+    owner: root
+    group: root
+    mode: "0644"
+
+# Never restarted here: this play may be running inside the runner. Unit changes apply on next restart/reboot.
+- name: Enable runner service
+  ansible.builtin.systemd_service:
+    name: actions-runner.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: gha_runner_registered.stat.exists or gha_runner_token | length > 0

@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+[Unit]
+Description=GitHub Actions runner for {{ gha_runner_repo_url }}
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists={{ gha_runner_dir }}/.runner
+
+[Service]
+User={{ gha_runner_user }}
+WorkingDirectory={{ gha_runner_dir }}
+Environment=PATH={{ gha_runner_ansible_venv }}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart={{ gha_runner_dir }}/run.sh
+KillMode=process
+KillSignal=SIGTERM
+TimeoutStopSec=5min
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

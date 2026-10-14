@@ -1,0 +1,17 @@
+---
+# Shared settings used by several roles.
+service_user: scraper
+service_uid: 1500
+service_gid: 1500
+
+# Where scraper output lives. With storage_smb_enabled this is a subdirectory of the SMB mount.
+data_mount_point: /mnt/data
+data_dir: "{{ data_mount_point }}/app-reviews-scraper"
+
+# healthchecks.io: checks are created/updated through the Management API (upsert by name),
+# so the only secret needed is a read-write project API key.
+healthchecks_api_url: https://healthchecks.io/api/v3
+healthchecks_ping_url: https://hc-ping.com
+healthchecks_api_key: ""
+healthchecks_channels: "*"
+healthchecks_tags: "{{ inventory_hostname_short }} research-vm"

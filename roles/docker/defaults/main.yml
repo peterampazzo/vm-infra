@@ -1,0 +1,14 @@
+---
+docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+# Move images/containers off /var (often small on stock VM images) if a bigger volume exists.
+docker_data_root: /var/lib/docker
+# Containers run with --network host and Docker does not touch iptables, so the
+# The provider's firewall rules stay exactly as supplied. The scraper only needs outbound HTTPS.
+docker_manage_iptables: false
+docker_log_driver: journald
+# Registries to log in to, e.g. [{registry: ghcr.io, username: x, password: "{{ vault_ghcr_token }}"}]
+docker_registry_auth: []

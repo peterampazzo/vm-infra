@@ -1,0 +1,6 @@
+---
+- name: Pull the pinned registry image
+  ansible.builtin.command:
+    cmd: docker pull {{ scraper_image | quote }}
+  register: scraper_pull
+  changed_when: "'Downloaded newer image' in scraper_pull.stdout"

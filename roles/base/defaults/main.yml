@@ -1,0 +1,30 @@
+---
+base_timezone: Europe/London
+base_packages:
+  - ca-certificates
+  - curl
+  - jq
+  - unattended-upgrades
+  - apt-listchanges
+
+# Security patches must be applied promptly.
+base_auto_reboot: true
+base_auto_reboot_time: "04:30"
+base_upgrade_origins:
+  - "${distro_id}:${distro_codename}"
+  - "${distro_id}:${distro_codename}-security"
+  - "${distro_id}ESMApps:${distro_codename}-apps-security"
+  - "${distro_id}ESM:${distro_codename}-infra-security"
+  - "Docker:${distro_codename}"
+
+# Keep the journal small: stock VM images can have a tiny /var.
+base_journald_max_use: 200M
+base_journald_max_retention: 1month
+
+# SSH. Users listed here are ADDED to an existing AllowUsers line, never replacing it,
+# so the provider's admin account keeps access.
+base_ssh_allow_users: []
+# Public keys to install: [{user: mabc1234, key: "ssh-ed25519 AAAA..."}]
+base_ssh_authorized_keys: []
+# Only flip this once key login works for every admin; the provider's admins may rely on passwords.
+base_ssh_disable_password_auth: false
