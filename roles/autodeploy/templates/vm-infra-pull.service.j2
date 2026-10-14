@@ -1,0 +1,14 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Apply {{ autodeploy_branch }} of {{ autodeploy_repo_url }} (ansible-pull)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vm-infra/autodeploy.env
+Environment=HOME=/root
+Environment=ANSIBLE_COLLECTIONS_PATH={{ autodeploy_collections_dir }}
+Environment=ANSIBLE_NOCOLOR=1
+ExecStart=/usr/local/bin/vm-infra-pull
+TimeoutStartSec=2h

@@ -43,3 +43,12 @@ scraper_jobs:
     store: google
     args: [--details, --similar, --reviews]
     schedule: "Wed *-*-* 02:00:00"
+
+# ---- Auto-deploy: the VM applies main itself every hour with ansible-pull (docs/RUNNING.md, step 4).
+autodeploy_enabled: false
+autodeploy_repo_url: https://github.com/peterampazzo/vm-infra.git
+
+# ---- "Run workflow" buttons through a GitHub Actions runner on the VM (docs/RUNNING.md, step 5).
+# Public repo: requires "Require approval for all external contributors"; never approve fork PR runs.
+gha_runner_enabled: false
+gha_runner_repo_url: https://github.com/peterampazzo/vm-infra

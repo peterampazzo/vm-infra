@@ -14,6 +14,8 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 | `docker` | Docker CE with `iptables: false` and no bridge network. Containers use host networking, so the provider's firewall is left untouched. Logs go to journald. |
 | `scraper` | Builds the scraper image from a **pinned git commit**. Each job in `scraper_jobs` gets a systemd timer that runs `docker run --rm` and writes to the share. App lists in `files/apps/` are synced to the share. Jobs removed from config are removed from the VM. |
 | `monitoring` | Uses the healthchecks.io API to create checks: one per job, plus a 5-minute host heartbeat (disk, share writable, Docker, failed units). Optionally installs Grafana Alloy to ship logs and metrics to Grafana Cloud. |
+| `gha_runner` | Optional (`gha_runner_enabled`): a GitHub Actions runner on the VM for manual "Run workflow" buttons (status, diff, deploy, run, logs). |
+| `autodeploy` | Optional (`autodeploy_enabled`): `ansible-pull` on an hourly timer. The VM fetches `main` and applies it, so merging a PR deploys it. |
 
 ### Alerts
 
@@ -24,7 +26,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 
 ## Docs
 
-* **[docs/RUNNING.md](docs/RUNNING.md)**: step by step, from an empty VM to scheduled jobs.
+* **[docs/RUNNING.md](docs/RUNNING.md)**: step by step, from an empty VM to scheduled jobs, plus auto-deploy and the Actions buttons.
 * **[docs/ANSIBLE.md](docs/ANSIBLE.md)**: how the Ansible is organised, where settings live, how to add a job.
 
 ## To do before go-live
@@ -39,6 +41,7 @@ research-data share, so the VM itself holds no state: to rebuild it, get a new V
 - [ ] Put the app lists to study in `files/apps/` (format: `files/apps/example.json`) and define `scraper_jobs`.
 - [ ] Create and encrypt `vault.yml`. Store the vault password in a password manager.
 - [ ] First deploy from a laptop (`make diff EXTRA=-K`, `make deploy EXTRA=-K`), then `make run JOB=...` and check healthchecks.io goes green.
+- [ ] Optional: auto-deploy from `main` (RUNNING.md, step 4) and/or the Actions buttons (step 5, read the security notes first).
 - [ ] Once SSH keys work for everyone: `base_ssh_disable_password_auth: true`.
 
 ## Day-to-day
@@ -49,6 +52,7 @@ make deploy               # apply
 make status               # timers, last/next runs
 make run JOB=example-apple
 make logs JOB=example-apple
+make pull                 # with auto-deploy: apply main now instead of waiting for the hourly run
 ```
 
 * **Add or change a job**: edit `scraper_jobs` and/or `files/apps/*.json`, then `make deploy`.

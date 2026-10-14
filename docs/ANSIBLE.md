@@ -24,6 +24,8 @@ roles/<role>/
 files/apps/*.json                app lists to scrape (copied to the share)
 molecule/default/                the test: a throwaway Ubuntu 24.04 container stands in for the VM
 .github/workflows/ci.yml         lint + molecule on every PR (GitHub-hosted; never touches the VM)
+.github/workflows/deploy.yml     "Run workflow" buttons on the VM's own runner (workflow_dispatch only)
+scripts/check_workflows.py       part of `make lint`: no pull_request_target, self-hosted jobs only via workflow_dispatch
 ```
 
 ## Roles, in run order
@@ -37,6 +39,8 @@ molecule/default/                the test: a throwaway Ubuntu 24.04 container st
 | `docker` | | Docker CE that doesn't touch the firewall (`iptables: false`, host networking only), logs to journald. | `docker_data_root` |
 | `scraper` | | Builds the image from a pinned commit, syncs app lists, and creates one systemd timer per job. Jobs removed from config are removed from the VM. | `scraper_git_ref`, `scraper_jobs` |
 | `monitoring` | | Creates the healthchecks.io checks, installs the heartbeat timer, and optionally Grafana Alloy. | vault: `vault_healthchecks_api_key`; `monitoring_disk_threshold_pct`, `monitoring_alloy_*` |
+| `gha_runner` | only if `gha_runner_enabled` | GitHub Actions runner on the VM (user `gha-runner`, passwordless sudo). | `gha_runner_enabled`, `gha_runner_repo_url`, `-e gha_runner_token=...` once |
+| `autodeploy` | only if `autodeploy_enabled` | Installs Ansible in a venv on the VM, copies the vault password (root-only), and a `vm-infra-pull.timer` that runs `ansible-pull` of `main`. | `autodeploy_enabled`, `autodeploy_repo_url`, `autodeploy_branch`, `autodeploy_interval_min` |
 
 ## Where settings come from
 
@@ -66,7 +70,7 @@ Each run: the timer starts `scraper@<name>.service`. That pings healthchecks.io 
 `scraper` with `<data_dir>` mounted, and pings `/<exit code>` with the last 10 KB of output. Runs start up to
 `scraper_randomized_delay` (10 min) late, so jobs don't all start at once.
 
-To add a job: add an app list to `files/apps/`, add an entry to `scraper_jobs`, then `make diff` and `make deploy`. The healthchecks.io check is created automatically.
+To add a job: add an app list to `files/apps/`, add an entry to `scraper_jobs`, then `make diff` and `make deploy` (or merge to `main`, with auto-deploy). The healthchecks.io check is created automatically.
 
 ## Running only part of it
 

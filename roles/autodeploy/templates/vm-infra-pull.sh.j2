@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# ansible-pull: fetch {{ autodeploy_branch }} of {{ autodeploy_repo_url }} and apply {{ autodeploy_playbook }} on this VM.
+# Reports start / exit code (+ log tail) to healthchecks.io. Shares a lock with the Actions runner's deploy job.
+set -uo pipefail
+
+rid=$(cat /proc/sys/kernel/random/uuid)
+
+hc_ping() {
+  [[ -n "${HC_PING_URL:-}" ]] || return 0
+  curl -fsS -m 10 --retry 5 -o /dev/null --data-binary "${2:-}" "${HC_PING_URL}${1}?rid=${rid}" \
+    || echo "healthcheck ping failed" >&2
+}
+
+exec 9<{{ deploy_lock_file | quote }}
+if ! flock -w 3600 9; then
+  hc_ping /fail "another deploy held {{ deploy_lock_file }} for an hour"
+  exit 1
+fi
+
+hc_ping /start
+
+{{ autodeploy_venv }}/bin/ansible-pull \
+  --url {{ autodeploy_repo_url | quote }} \
+  --checkout {{ autodeploy_branch | quote }} \
+  --directory {{ autodeploy_checkout_dir | quote }} \
+  --clean \
+  --limit {{ inventory_hostname | quote }} \
+  --vault-password-file {{ autodeploy_vault_password_file | quote }} \
+  {{ autodeploy_playbook | quote }}
+rc=$?
+
+log_tail=$(journalctl --no-pager -o cat "_SYSTEMD_INVOCATION_ID=${INVOCATION_ID:-none}" 2>/dev/null | tail -c 10000)
+hc_ping "/${rc}" "${log_tail}"
+exit "${rc}"

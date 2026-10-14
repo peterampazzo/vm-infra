@@ -3,13 +3,15 @@
 #        make run JOB=<name>    start a scraper job now
 #        make logs JOB=<name>   last 200 log lines of a job
 #        make status            list timers / last runs
+#        make pull              run auto-deploy (ansible-pull of main) now
+#        make pull-logs         last 200 lines of auto-deploy output
 # Pass extra ansible flags with EXTRA, e.g. EXTRA="-K --limit scraper-vm".
 VAULT := $(if $(wildcard .vault-pass),--vault-password-file .vault-pass,--ask-vault-pass)
 EXTRA ?=
 AP := ansible-playbook site.yml $(VAULT) $(EXTRA)
 AH := ansible research_vm -b $(VAULT) $(EXTRA)
 
-.PHONY: deps lint test diff deploy run logs status check-vault
+.PHONY: deps lint test diff deploy run logs status pull pull-logs check-vault
 
 deps:
 	pip install -r requirements-dev.txt
@@ -19,6 +21,7 @@ deps:
 lint: check-vault
 	yamllint .
 	ansible-lint
+	python3 scripts/check_workflows.py
 
 test:
 	molecule test
@@ -38,7 +41,13 @@ logs:
 	$(AH) -m ansible.builtin.command -a "journalctl -u scraper@$(JOB).service -n 200 --no-pager"
 
 status:
-	$(AH) -m ansible.builtin.command -a "systemctl list-timers scraper-job-* vm-heartbeat.timer --all --no-pager"
+	$(AH) -m ansible.builtin.command -a "systemctl list-timers scraper-job-* vm-heartbeat.timer vm-infra-pull.timer --all --no-pager"
+
+pull:
+	$(AH) -m ansible.builtin.systemd_service -a "name=vm-infra-pull.service state=started no_block=true"
+
+pull-logs:
+	$(AH) -m ansible.builtin.command -a "journalctl -u vm-infra-pull.service -n 200 --no-pager"
 
 check-vault:
 	@for f in $$(find inventories -name vault.yml); do \

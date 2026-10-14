@@ -1,0 +1,83 @@
+---
+# "Run workflow" buttons that run on the self-hosted runner on the VM (roles/gha_runner). See docs/RUNNING.md, step 5.
+# workflow_dispatch only: starting it needs write access. Merges to main are applied by roles/autodeploy (ansible-pull).
+# scripts/check_workflows.py fails CI if a self-hosted workflow gets any other trigger.
+# Every job is skipped until the repo variable VM_RUNNER is "true".
+name: VM
+"on":
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [status, diff, deploy, run, logs]
+        default: status
+      job:
+        description: Scraper job name (for run / logs)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vm-infra-actions
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ANSIBLE_FORCE_COLOR: "1"
+  RUNNER_VENV: /opt/gha-runner/venv/bin
+  DEPLOY_LOCK: /run/vm-infra-deploy.lock  # deploy_lock_file, shared with ansible-pull
+
+jobs:
+  deploy:
+    if: vars.VM_RUNNER == 'true' && inputs.action == 'deploy'
+    runs-on: [self-hosted, research-vm]
+    environment: production  # add yourself as required reviewer
+    steps:
+      - name: Only main is deployed
+        run: '[[ "$GITHUB_REF" == refs/heads/main ]] || { echo "deploy runs from main only; use diff for branches"; exit 1; }'
+      - uses: actions/checkout@v4
+      - name: Prepare
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          echo "$RUNNER_VENV" >> "$GITHUB_PATH"
+          (umask 077 && printf '%s' "$VAULT_PASSWORD" > .vault-pass)
+      - run: ansible-galaxy collection install -r requirements.yml
+      - run: flock -w 3600 "$DEPLOY_LOCK" make deploy EXTRA="-e ansible_connection=local --limit $RUNNER_NAME"
+      - if: always()
+        run: rm -f .vault-pass
+
+  ops:
+    if: vars.VM_RUNNER == 'true' && inputs.action != 'deploy'
+    runs-on: [self-hosted, research-vm]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          echo "$RUNNER_VENV" >> "$GITHUB_PATH"
+          (umask 077 && printf '%s' "$VAULT_PASSWORD" > .vault-pass)
+      - run: ansible-galaxy collection install -r requirements.yml
+      - name: make ${{ inputs.action }}
+        env:
+          ACTION: ${{ inputs.action }}
+          JOB: ${{ inputs.job }}
+        run: |
+          [[ -z "$JOB" || "$JOB" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "invalid job name"; exit 1; }
+          cmd=(make "$ACTION" JOB="$JOB" EXTRA="-e ansible_connection=local --limit $RUNNER_NAME")
+          if [[ "$ACTION" == diff ]]; then
+            cmd=(flock -w 3600 "$DEPLOY_LOCK" "${cmd[@]}")
+          fi
+          "${cmd[@]}" 2>&1 | tee out.log
+          status=${PIPESTATUS[0]}
+          { echo "## make $ACTION"; echo '```'; sed 's/\x1b\[[0-9;]*m//g' out.log | tail -c 60000; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - if: always()
+        run: rm -f .vault-pass out.log

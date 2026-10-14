@@ -1,0 +1,22 @@
+---
+# Pull-based deploys (ansible-pull): a systemd timer on the VM fetches autodeploy_branch of autodeploy_repo_url and
+# applies the playbook locally. Nothing connects in, and fork PRs or unmerged branches never reach the VM.
+autodeploy_enabled: false
+autodeploy_repo_url: ""  # e.g. https://github.com/<owner>/<repo>.git
+autodeploy_branch: main
+autodeploy_playbook: site.yml
+# Runs every interval even if nothing changed, so failed runs are retried and manual drift is undone.
+autodeploy_interval_min: 60
+autodeploy_boot_delay_min: 10
+autodeploy_home: /opt/vm-infra-pull
+autodeploy_checkout_dir: "{{ autodeploy_home }}/checkout"
+autodeploy_venv: "{{ autodeploy_home }}/venv"
+autodeploy_collections_dir: "{{ autodeploy_home }}/collections"
+autodeploy_ansible_core_version: ">=2.17,<2.20"
+# Vault password on the VM (root-only). A laptop deploy copies it from the laptop's .vault-pass;
+# runs on the VM itself leave it alone.
+autodeploy_vault_password_file: /etc/vm-infra/vault-pass
+autodeploy_vault_password_src: "{{ playbook_dir }}/.vault-pass"
+autodeploy_requirements_src: "{{ playbook_dir }}/requirements.yml"
+# Leave empty to create the check through the healthchecks.io API.
+autodeploy_ping_url: ""

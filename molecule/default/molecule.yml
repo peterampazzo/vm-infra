@@ -23,6 +23,13 @@ provisioner:
         guardrails_protected_users: [itadmin]
         guardrails_protected_services: [nessusagent.service]
         guardrails_firewall_services: [ufw.service]
+        gha_runner_enabled: true  # installed but not registered (no token)
+        gha_runner_repo_url: https://github.com/peterampazzo/vm-infra
+        autodeploy_enabled: true
+        autodeploy_repo_url: file:///srv/autodeploy-test.git  # created in verify.yml
+        autodeploy_boot_delay_min: 1000000  # verify.yml starts it by hand
+        autodeploy_vault_password_src: ${MOLECULE_PROJECT_DIRECTORY}/molecule/default/test-vault-pass
+        autodeploy_requirements_src: ${MOLECULE_PROJECT_DIRECTORY}/requirements.yml
         base_ssh_allow_users: [scraperadmin]
         storage_smb_enabled: false
         healthchecks_api_key: ""
