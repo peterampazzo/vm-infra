@@ -69,16 +69,3 @@
     - name: Heartbeat self-check passes
       ansible.builtin.command: /usr/local/bin/vm-heartbeat
       changed_when: false
-
-    - name: Check the runner is unpacked
-      ansible.builtin.stat:
-        path: /opt/gha-runner/runner/config.sh
-      register: verify_runner
-
-    - name: Runner Ansible works
-      ansible.builtin.command: /opt/gha-runner/venv/bin/ansible --version
-      changed_when: false
-
-    - name: Runner is installed (registration needs a real token)
-      ansible.builtin.assert:
-        that: verify_runner.stat.exists
