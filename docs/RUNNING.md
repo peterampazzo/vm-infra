@@ -1,9 +1,16 @@
 # Running vm-infra
 
-Everything runs from your laptop: Ansible logs into the VM over SSH and applies `site.yml`. Nothing is done on the VM
-by hand, and nothing deploys automatically. GitHub CI (lint + tests) runs on GitHub's own machines and never touches the VM,
-so the repo can stay public as long as real secrets only live in the encrypted `vault.yml`. Anyone can download that file,
-so use a long random vault password (e.g. `openssl rand -base64 32`).
+Nothing is done on the VM by hand. There are three ways to apply this repo, and all of them run the same `site.yml`:
+
+* **From your laptop** over SSH (`make diff` / `make deploy`). Needed for the first run, and it always works as a fallback.
+* **Auto-deploy (optional, step 4):** the VM runs `ansible-pull` every hour. It fetches `main` from GitHub and applies it,
+  so merging a PR deploys it. Nothing connects in, and fork PRs or unmerged branches never reach the VM.
+* **GitHub Actions buttons (optional, step 5):** a runner on the VM gives "Run workflow" buttons (status, diff, deploy,
+  run, logs), so nobody needs a terminal. Read the security notes in step 5 before enabling it.
+
+GitHub CI (lint + tests) runs on GitHub's own machines and never touches the VM. The repo is public, so real secrets
+only live in the encrypted `vault.yml`. Anyone can download that file, so use a long random vault password
+(e.g. `openssl rand -base64 32`).
 
 ## 0. What you need
 
@@ -87,19 +94,81 @@ make logs JOB=example-apple
 
 After this you should have green checks in healthchecks.io: one heartbeat and one check per job, which turns green after the job's first run.
 
+## 4. Auto-deploy from `main` (optional)
+
+1. **Settings > Branches**: add a rule for `main` that requires a pull request and the `lint` and `molecule` checks.
+   With auto-deploy, whoever can push to `main` (only you) can change the VM.
+2. In `group_vars/research_vm/main.yml`, set `autodeploy_enabled: true` (`autodeploy_repo_url` already points at this repo).
+   Commit and merge.
+3. Run `make deploy EXTRA=-K` once from your laptop. This installs Ansible in a venv on the VM, copies your
+   `.vault-pass` to `/etc/vm-infra/vault-pass` (root-only), and starts `vm-infra-pull.timer`.
+
+From then on the VM fetches `main` every hour (`autodeploy_interval_min`) and applies it. It runs even when nothing changed,
+so a failed run is retried and manual changes on the VM are undone. The healthchecks.io check `autodeploy@<vm>` gets each
+run's exit code and the last 10 KB of output.
+
+* Changes reach the VM through `main` only. Preview them with `make diff` from your branch (or the `diff` button, step 5), then merge.
+* A laptop `make deploy` of an unmerged branch is undone at the next hourly run.
+* `make pull` applies `main` now; `make pull-logs` shows the output of the last runs.
+* Changing the vault password (`ansible-vault rekey`): update `.vault-pass`, then run `make deploy` from your laptop
+  so the VM gets the new one. Until then auto-deploy fails (and alerts).
+
+## 5. GitHub Actions buttons (optional)
+
+A runner on the VM gives **Actions > VM > Run workflow** buttons. It only makes outbound HTTPS connections.
+
+> **Security (public repo).** The runner can become root on the VM. `deploy.yml` only has a `workflow_dispatch` trigger,
+> which needs write access, but anyone can open a fork PR that adds its own workflow targeting the runner. The only thing
+> that stops it is GitHub's fork approval setting, so:
+> * set **Require approval for all external contributors** (item 1 below). The "first-time contributor" levels stop asking
+>   once someone has had any PR merged;
+> * **never click "Approve and run" on a fork PR.** You're the only writer: if a PR is useful, read it, close it, and
+>   re-apply the change on your own branch;
+> * don't add `pull_request_target` workflows (they skip approval). `make lint` fails if any workflow uses it, or if a
+>   workflow with a self-hosted job has any trigger other than `workflow_dispatch`. That check only catches our own
+>   mistakes; a fork can edit it.
+>
+> GitHub recommends self-hosted runners only for private repos. If you don't need the buttons, skip this step:
+> auto-deploy (step 4) doesn't need a runner.
+
+1. **Settings > Actions > General > Approval for running fork pull request workflows from contributors**:
+   choose **Require approval for all external contributors**.
+2. **Settings > Environments > New environment** named `production`. Add yourself as a **required reviewer**, so every
+   `deploy` waits for your approval.
+3. **Settings > Secrets and variables > Actions > New repository secret**: `ANSIBLE_VAULT_PASSWORD` = the vault password.
+4. Branch protection for `main` as in step 4.1.
+5. In `group_vars/research_vm/main.yml`, set `gha_runner_enabled: true` and commit.
+6. **Settings > Actions > Runners > New self-hosted runner**: copy the token from the `./config.sh --token XXXX` line
+   (it expires after 1 hour), then run:
+   ```bash
+   make deploy EXTRA="-K -e gha_runner_token=XXXX"
+   ```
+   The runner should show as *Idle* with the label `research-vm`.
+7. **Settings > Secrets and variables > Actions > Variables**: create `VM_RUNNER` = `true`. Until then every job is skipped.
+
+| Button (`action`) | What it does |
+|---|---|
+| `status` | Timers and last/next runs. |
+| `diff` | Dry run of the branch picked in "Use workflow from": a safe preview before merging. Output in the run summary. |
+| `deploy` | Applies `main` (refuses other branches), after your approval in the `production` environment. |
+| `run` / `logs` | Start a job now / last 200 log lines (needs `job`). |
+
+`deploy` and `diff` share a lock with auto-deploy, so they never run at the same time.
+
 ## Common changes
 
 | Change | Edit | Then |
 |---|---|---|
-| Add/remove a scraping job | `scraper_jobs`, `files/apps/*.json` | commit, `make diff`, `make deploy` |
-| New scraper version | `scraper_git_ref` (commit SHA) | commit, `make diff`, `make deploy` |
-| Rotate share password | `ansible-vault edit .../vault.yml` | commit, `make diff`, `make deploy` |
-| Add an admin | `base_ssh_allow_users`, `base_ssh_authorized_keys` | commit, `make diff`, `make deploy` |
+| Add/remove a scraping job | `scraper_jobs`, `files/apps/*.json` | PR + `make diff`, then merge (auto-deploy) or `make deploy` |
+| New scraper version | `scraper_git_ref` (commit SHA) | PR + `make diff`, then merge (auto-deploy) or `make deploy` |
+| Rotate share password | `ansible-vault edit .../vault.yml` | PR + `make diff`, then merge (auto-deploy) or `make deploy` |
+| Add an admin | `base_ssh_allow_users`, `base_ssh_authorized_keys` | PR + `make diff`, then merge (auto-deploy) or `make deploy` |
 
 ## Rebuilding the VM
 
 1. Get a new VM and update `ansible_host` in `inventories/production/hosts.yml`.
-2. Run step 3 from your laptop.
+2. Run step 3 from your laptop. That also sets up auto-deploy if it's enabled. If you use the Actions buttons, run step 5.6
+   with a new token and remove the old runner under Settings > Actions > Runners.
 
 Data lives on the share, so there's nothing to restore.
 
@@ -109,3 +178,5 @@ Data lives on the share, so there's nothing to restore.
   refuses to change anything until it's fixed.
 * Heartbeat check red: its last ping body lists the problem (disk, share not writable, Docker down, failed units).
 * Job check red: the ping body has the last 10 KB of job output. Run `make logs JOB=<name>` for more.
+* `autodeploy` check red: the ping body has the end of the `ansible-pull` output. Run `make pull-logs` for more.
+* Runner offline: `ansible research_vm -b -a "systemctl status actions-runner --no-pager"`.

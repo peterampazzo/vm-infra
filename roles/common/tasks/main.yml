@@ -22,3 +22,21 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Recreate the deploy lock file at boot
+  ansible.builtin.copy:
+    dest: /etc/tmpfiles.d/vm-infra.conf
+    content: "f {{ deploy_lock_file }} 0644 root root -\n"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Create the deploy lock file
+  ansible.builtin.file:
+    path: "{{ deploy_lock_file }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+    modification_time: preserve
+    access_time: preserve

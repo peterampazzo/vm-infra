@@ -28,7 +28,7 @@
       ansible.builtin.systemd_service:
         name: "{{ item }}"
       register: verify_timers
-      loop: [scraper-job-molecule-google.timer, scraper-job-molecule-apple.timer, vm-heartbeat.timer]
+      loop: [scraper-job-molecule-google.timer, scraper-job-molecule-apple.timer, vm-heartbeat.timer, vm-infra-pull.timer]
 
     - name: Timers are enabled and active
       ansible.builtin.assert:
@@ -69,3 +69,104 @@
     - name: Heartbeat self-check passes
       ansible.builtin.command: /usr/local/bin/vm-heartbeat
       changed_when: false
+
+    - name: Check the runner is unpacked
+      ansible.builtin.stat:
+        path: /opt/gha-runner/runner/config.sh
+      register: verify_runner
+
+    - name: Runner Ansible works
+      ansible.builtin.command: /opt/gha-runner/venv/bin/ansible --version
+      changed_when: false
+
+    - name: Runner is installed (registration needs a real token)
+      ansible.builtin.assert:
+        that: verify_runner.stat.exists
+
+    - name: The runner user can take the shared deploy lock
+      ansible.builtin.command: flock -n /run/vm-infra-deploy.lock true
+      become: true
+      become_user: gha-runner
+      changed_when: false
+
+    - name: Read the vault password file
+      ansible.builtin.stat:
+        path: /etc/vm-infra/vault-pass
+      register: verify_vault_pass
+
+    - name: Vault password is root-only
+      ansible.builtin.assert:
+        that:
+          - verify_vault_pass.stat.exists
+          - verify_vault_pass.stat.mode == '0400'
+          - verify_vault_pass.stat.pw_name == 'root'
+
+    - name: Create the auto-deploy test repo
+      ansible.builtin.file:
+        path: /srv/autodeploy-src
+        state: directory
+        mode: "0755"
+
+    - name: Write the auto-deploy test repo
+      ansible.builtin.copy:
+        dest: "/srv/autodeploy-src/{{ item.name }}"
+        content: "{{ item.content }}"
+        mode: "0644"
+      loop:
+        - name: ansible.cfg
+          content: |
+            [defaults]
+            inventory = hosts.yml
+        - name: hosts.yml
+          content: |
+            all:
+              hosts:
+                {{ inventory_hostname }}:
+        - name: site.yml
+          content: |
+            - name: Auto-deploy test
+              hosts: all
+              gather_facts: false
+              tasks:
+                - name: Leave a marker
+                  ansible.builtin.copy:
+                    dest: /tmp/autodeploy-ok
+                    content: "ok"
+                    mode: "0644"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Publish the auto-deploy test repo
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          rm -rf .git /srv/autodeploy-test.git /tmp/autodeploy-ok
+          git init -q -b main
+          git add -A
+          git -c user.name=molecule -c user.email=molecule@localhost commit -qm test
+          git clone -q --bare . /srv/autodeploy-test.git
+        chdir: /srv/autodeploy-src
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Run auto-deploy once (ansible-pull)
+      ansible.builtin.systemd_service:
+        name: vm-infra-pull.service
+        state: started
+      changed_when: false
+
+    - name: Read auto-deploy result
+      ansible.builtin.systemd_service:
+        name: vm-infra-pull.service
+      register: verify_pull
+
+    - name: Read the auto-deploy marker
+      ansible.builtin.stat:
+        path: /tmp/autodeploy-ok
+      register: verify_marker
+
+    - name: Auto-deploy fetched the repo and applied it
+      ansible.builtin.assert:
+        that:
+          - verify_pull.status.Result == 'success'
+          - verify_marker.stat.exists

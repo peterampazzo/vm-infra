@@ -1,0 +1,11 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Run ansible-pull every {{ autodeploy_interval_min }} minutes
+
+[Timer]
+OnBootSec={{ autodeploy_boot_delay_min }}min
+OnUnitActiveSec={{ autodeploy_interval_min }}min
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

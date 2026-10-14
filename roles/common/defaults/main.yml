@@ -15,3 +15,6 @@ healthchecks_ping_url: https://hc-ping.com
 healthchecks_api_key: ""
 healthchecks_channels: "*"
 healthchecks_tags: "{{ inventory_hostname_short }} research-vm"
+
+# Lock shared by ansible-pull (autodeploy) and the Actions runner's deploy/diff jobs.
+deploy_lock_file: /run/vm-infra-deploy.lock

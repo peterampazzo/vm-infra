@@ -1,0 +1,123 @@
+---
+- name: Validate auto-deploy settings
+  ansible.builtin.assert:
+    that: autodeploy_repo_url | length > 0
+    fail_msg: Set autodeploy_repo_url, e.g. https://github.com/<owner>/<repo>.git
+    quiet: true
+
+- name: Install auto-deploy prerequisites
+  ansible.builtin.apt:
+    name: [python3-venv, git]
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install Ansible for ansible-pull
+  ansible.builtin.pip:
+    name: "ansible-core{{ autodeploy_ansible_core_version }}"
+    virtualenv: "{{ autodeploy_venv }}"
+    virtualenv_command: python3 -m venv
+
+- name: Copy collection requirements
+  ansible.builtin.copy:
+    src: "{{ autodeploy_requirements_src }}"
+    dest: "{{ autodeploy_home }}/requirements.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install collections for ansible-pull
+  ansible.builtin.command:
+    argv:
+      - "{{ autodeploy_venv }}/bin/ansible-galaxy"
+      - collection
+      - install
+      - -r
+      - "{{ autodeploy_home }}/requirements.yml"
+      - -p
+      - "{{ autodeploy_collections_dir }}"
+  register: autodeploy_galaxy
+  changed_when: "'Nothing to do' not in autodeploy_galaxy.stdout"
+
+- name: Check for the vault password on the VM
+  ansible.builtin.stat:
+    path: "{{ autodeploy_vault_password_file }}"
+  register: autodeploy_vault_pass
+
+# Only when run from a laptop that has .vault-pass; ansible-pull runs on the VM skip this.
+- name: Copy the vault password from the laptop
+  diff: false
+  ansible.builtin.copy:
+    src: "{{ autodeploy_vault_password_src }}"
+    dest: "{{ autodeploy_vault_password_file }}"
+    owner: root
+    group: root
+    mode: "0400"
+  no_log: true
+  when: autodeploy_vault_password_src is file
+
+- name: Require a vault password on the VM
+  ansible.builtin.assert:
+    that: autodeploy_vault_pass.stat.exists or autodeploy_vault_password_src is file
+    fail_msg: >-
+      No vault password on the VM. Put it in .vault-pass on your laptop and run make deploy once (docs/RUNNING.md).
+    quiet: true
+
+- name: Create or update auto-deploy check on healthchecks.io
+  ansible.builtin.uri:
+    url: "{{ healthchecks_api_url }}/checks/"
+    method: POST
+    headers:
+      X-Api-Key: "{{ healthchecks_api_key }}"
+    body_format: json
+    body:
+      name: "autodeploy@{{ inventory_hostname_short }}"
+      tags: "{{ healthchecks_tags }}"
+      desc: "ansible-pull of {{ autodeploy_branch }} on {{ inventory_hostname }}. Managed by vm-infra."
+      timeout: "{{ autodeploy_interval_min * 60 }}"
+      grace: "{{ autodeploy_interval_min * 60 * 2 }}"
+      channels: "{{ healthchecks_channels }}"
+      unique: [name]
+    status_code: [200, 201]
+  register: autodeploy_check
+  changed_when: autodeploy_check.status == 201
+  check_mode: false
+  no_log: true
+  when: autodeploy_ping_url | length == 0 and healthchecks_api_key | length > 0
+
+- name: Write auto-deploy environment
+  diff: false  # contains the ping URL
+  ansible.builtin.copy:
+    dest: /etc/vm-infra/autodeploy.env
+    content: |
+      HC_PING_URL={{ autodeploy_ping_url or (autodeploy_check.json.ping_url | default('')) }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Install auto-deploy script
+  ansible.builtin.template:
+    src: vm-infra-pull.sh.j2
+    dest: /usr/local/bin/vm-infra-pull
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install auto-deploy units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - vm-infra-pull.service
+    - vm-infra-pull.timer
+
+# The service itself is never restarted here: this play may be running inside it.
+- name: Enable auto-deploy timer
+  ansible.builtin.systemd_service:
+    name: vm-infra-pull.timer
+    enabled: true
+    state: started
+    daemon_reload: true
